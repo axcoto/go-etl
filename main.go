@@ -10,17 +10,21 @@ import (
 	"log"
 	"time"
 
-	//"./types"
+	"./etl"
+	"./types"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
+
+	"flag"
 )
 
 var (
-	config map[string]string
+	config     map[string]string
+	queryScope string
 )
 
 func initConfig() {
@@ -30,9 +34,16 @@ func initConfig() {
 	config["PG_FETCH_LIMIT"] = os.Getenv("PG_FETCH_LIMIT")
 }
 
-func main() {
+func init() {
+	flag.StringVar(&queryScope, "scope", "", "Scope the query")
+	flag.Parse()
+
 	initConfig()
 	monitor.NewMonitor()
+}
+
+func main() {
+	log.Printf("Query scope: %s", queryScope)
 
 	start := time.Now()
 	db, err := sqlx.Open("postgres", config["PG_URI"])
@@ -50,14 +61,14 @@ func main() {
 
 	svc := dynamodb.New(sess, &aws.Config{Region: aws.String("us-west-2"), Endpoint: aws.String("http://127.0.0.1:8009")})
 
-	extractChannel := make(chan map[string]interface{})
-	transformChannel := make(chan *dynamodb.PutRequest)
-	doneChannel := make(chan bool)
+	for _, table := range types.Table() {
+		log.Printf("Init for table: %s\n", table)
+		etlSession := etl.NewSession(table, queryScope)
+		go extract.Run(etlSession, db)
+		go transform.Run(etlSession)
+		go loader.Run(etlSession, svc)
+		etlSession.Wait()
+	}
 
-	go extract.PrePop("table", extractChannel, db)
-	go transform.PrePop("table", extractChannel, transformChannel)
-	go loader.PrePop("table", transformChannel, svc)
-
-	<-doneChannel
 	log.Printf("ETL takes %s", time.Since(start))
 }

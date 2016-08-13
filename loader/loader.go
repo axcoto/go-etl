@@ -2,11 +2,17 @@ package loader
 
 import (
 	//"github.com/aws/aws-sdk-go/aws"
+	"../etl"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"log"
 )
 
-func PrePop(table string, transformChannel chan *dynamodb.PutRequest, svc *dynamodb.DynamoDB) {
+func Run(etlSession *etl.Session, svc *dynamodb.DynamoDB) {
+	table := etlSession.Get("table")
+	transformChannel := etlSession.TransformChannel
+
+	defer etlSession.Wg.Done()
+
 	for {
 		select {
 		case items := <-transformChannel:

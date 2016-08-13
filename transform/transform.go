@@ -1,15 +1,23 @@
 package transform
 
 import (
-	//"../types"
-	"fmt"
+	"../etl"
+	"../types"
+	//"fmt"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"log"
 	"time"
 )
 
-func PrePop(table string, extractChannel chan map[string]interface{}, transformChannel chan *dynamodb.PutRequest) {
+func Run(etlSession *etl.Session) {
+	table := etlSession.Get("table")
+
+	extractChannel := etlSession.ExtractChannel
+	transformChannel := etlSession.TransformChannel
+
+	defer etlSession.Wg.Done()
+
 	for {
 		select {
 		case out := <-extractChannel:
@@ -35,12 +43,8 @@ func PrePop(table string, extractChannel chan map[string]interface{}, transformC
 				}
 			}
 
-			switch table {
-			case "table":
-				item["extra_key"] = &dynamodb.AttributeValue{
-					N: aws.String(fmt.Sprintf("%d", out["key"].(time.Time).Unix())),
-				}
-			}
+			item = types.Transform(out, table, item)
+
 			items := &dynamodb.PutRequest{
 				Item: item,
 			}
