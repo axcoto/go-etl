@@ -32,6 +32,7 @@ func initConfig() {
 
 	config["PG_URI"] = os.Getenv("PG_URI")
 	config["PG_FETCH_LIMIT"] = os.Getenv("PG_FETCH_LIMIT")
+	config["DYNAMODB_BATCH_WRITE"] = os.Getenv("DYNAMODB_BATCH_WRITE")
 }
 
 func init() {
@@ -40,6 +41,10 @@ func init() {
 
 	initConfig()
 	monitor.NewMonitor()
+
+	if config["PG_URI"] == "" {
+		log.Fatal("Make sure you set environment var for connection")
+	}
 }
 
 func main() {
@@ -63,7 +68,8 @@ func main() {
 
 	for _, table := range types.Table() {
 		log.Printf("Init for table: %s\n", table)
-		etlSession := etl.NewSession(table, queryScope)
+		etlSession := etl.NewSession(config, table, queryScope)
+
 		go extract.Run(etlSession, db)
 		go transform.Run(etlSession)
 		go loader.Run(etlSession, svc)

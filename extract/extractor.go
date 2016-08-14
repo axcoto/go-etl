@@ -9,6 +9,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 	"log"
+	"strconv"
 )
 
 //Run fetches data and put into channel for processing
@@ -19,10 +20,12 @@ func Run(etlSession *etl.Session, db *sqlx.DB) {
 	defer etlSession.Wg.Done()
 	defer close(extractChannel)
 
-	offset := 0
-	limit := 16
+	offset := int(0)
+	limit, _ := strconv.Atoi(etlSession.Config("PG_FETCH_LIMIT"))
+	batch := 0
 	for {
-		log.Printf("Fetch params: limit %d offset %d", limit, offset)
+		batch += 1
+		log.Printf("Fetch batch: %d. Params: offset %d, limit %d", batch, offset, limit)
 		query := fmt.Sprintf("%s LIMIT %d OFFSET %d", types.Query(table), limit, offset)
 
 		rows, err := db.Queryx(query)
