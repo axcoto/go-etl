@@ -6,12 +6,14 @@ import (
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"log"
 	"strconv"
+	"sync"
 )
 
 func flush(svc *dynamodb.DynamoDB, params *dynamodb.BatchWriteItemInput) {
 	for {
 		//log.Printf("Flush to dynamo %#v\n", params)
 		response, err := svc.BatchWriteItem(params)
+		//log.Printf("Done flush to dynamo %#v\n", params)
 
 		if err != nil {
 			log.Fatal(err)
@@ -29,21 +31,32 @@ func flush(svc *dynamodb.DynamoDB, params *dynamodb.BatchWriteItemInput) {
 	}
 }
 
+func StartWorker() {
+}
+
 func Run(etlSession *etl.Session, svc *dynamodb.DynamoDB) {
 	table := etlSession.Get("table")
 	transformChannel := etlSession.TransformChannel
 
-	defer etlSession.Wg.Done()
+	workerCount, _ := strconv.Atoi(etlSession.Config("DYNAMODB_PARALLEL_FLUSH"))
+	workerWait := sync.WaitGroup{}
+	workerWait.Add(workerCount)
 
 	loadChannel := make(chan *dynamodb.BatchWriteItemInput)
-	workerCount, _ := strconv.Atoi(etlSession.Config("DYNAMODB_PARALLEL_FLUSH"))
 	for worker := 0; worker <= workerCount; worker++ {
 		go func() {
 			for payload := range loadChannel {
 				flush(svc, payload)
 			}
+			workerWait.Done()
 		}()
 	}
+
+	defer func() {
+		close(loadChannel)
+		workerWait.Wait()
+		etlSession.Wg.Done()
+	}()
 
 	for items := range transformChannel {
 		params := &dynamodb.BatchWriteItemInput{
@@ -56,7 +69,7 @@ func Run(etlSession *etl.Session, svc *dynamodb.DynamoDB) {
 			},
 		}
 
+		//log.Println("Flush to worker", items)
 		loadChannel <- params
 	}
-	close(loadChannel)
 }

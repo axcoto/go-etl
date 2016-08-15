@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 
 	"fmt"
+	"strings"
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
@@ -39,43 +40,54 @@ func Run(etlSession *etl.Session, db *sqlx.DB) {
 	limit, _ := strconv.Atoi(etlSession.Config("PG_FETCH_LIMIT"))
 	batch := 0
 	rowCount := 0
-	for {
-		batch += 1
-		log.Printf("Fetch batch: %d. Params: offset %d, limit %d", batch, offset, limit)
-		query := fmt.Sprintf("%s LIMIT %d OFFSET %d", types.Query(table), limit, offset)
-		//query := types.Query(table)
 
-		rows, err := db.Queryx(query)
-		if !rows.Next() {
-			log.Printf("No more rows to do. Stop at offset %d, Row Count: %d", offset, rowCount)
-			break
-		}
-		if err != nil {
-			log.Fatal(err)
-		}
+	//for {
+	//batch += 1
+	//log.Printf("Fetch batch: %d. Params: offset %d, limit %d", batch, offset, limit)
+	query := types.Query(table)
+	query = strings.Replace(query, "[START_TIMESTAMP_IN_PACIFIC_TIME]", etlSession.Get("[START_TIMESTAMP_IN_PACIFIC_TIME]"), -1)
+	query = strings.Replace(query, "[END_TIMESTAMP_IN_PACIFIC_TIME]", etlSession.Get("[END_TIMESTAMP_IN_PACIFIC_TIME]"), -1)
+	if scope := etlSession.Get("scope"); scope != "" {
+		query = fmt.Sprintf("%s AND %s", query, etlSession.Get("scope"))
+	}
+	log.Println("Extract data query: ", query)
 
-		for {
-			row := make(map[string]interface{})
-
-			err = rows.MapScan(row)
-			log.Printf("Row= %#v\n\n", row)
-
-			if err != nil {
-				log.Fatalln(err)
-			}
-
-			// fake id for benchmark helping when we don't have lot of data
-			row["git_id"] = []uint8(rand_str(40))
-
-			rowCount += 1
-			extractChannel <- row
-			if !rows.Next() {
-				break
-			}
-		}
-
-		//monitor.Report(table, offset)
-		offset = offset + limit
+	rows, err := db.Queryx(query)
+	if !rows.Next() {
+		log.Printf("No more rows to do. Stop at offset %d, Row Count: %d", offset, rowCount)
+		return
+		//break
+	}
+	if err != nil {
+		log.Fatal(err)
 	}
 
+	for {
+		row := make(map[string]interface{})
+		err = rows.MapScan(row)
+		//log.Printf("Row= %#v\n\n", row)
+
+		if err != nil {
+			log.Fatalln(err)
+		}
+
+		// fake id for benchmark helping when we don't have lot of data
+		// row["git_id"] = []uint8(rand_str(40))
+
+		rowCount += 1
+		extractChannel <- row
+		if !rows.Next() {
+			break
+		}
+
+		if rowCount%limit == 0 {
+			batch = rowCount / limit
+			monitor.Report(table, batch)
+			log.Printf("Extracted: %d rows", rowCount)
+		}
+	}
+	log.Printf("No more rows to do. Stop at row count: %d", rowCount)
+
+	//offset = offset + limit
+	//}
 }

@@ -20,11 +20,10 @@ func Run(etlSession *etl.Session) {
 	defer close(transformChannel)
 
 	for out := range extractChannel {
-		//select {
-		//case out := <-extractChannel:
-		log.Printf("Recive extracted value: %#v\n", out)
+		//log.Printf("Received extracted value: %#v\n", out)
 
 		if out == nil {
+			log.Println("Extracted channel closed. Exit transform channel")
 			continue
 		}
 
@@ -59,8 +58,7 @@ func Run(etlSession *etl.Session) {
 			Item: item,
 		}
 
-		log.Println("Send to transform channel")
+		log.Printf("Send to transform channel: %s", types.GetId(table, out))
 		transformChannel <- items
-		//}
 	}
 }
