@@ -3,7 +3,7 @@ package transform
 import (
 	"../etl"
 	"../types"
-	//"fmt"
+	"fmt"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"log"
@@ -42,6 +42,10 @@ func Run(etlSession *etl.Session) {
 				case time.Time:
 					item[k] = &dynamodb.AttributeValue{
 						S: aws.String(v.(time.Time).String()),
+					}
+				case int64:
+					item[k] = &dynamodb.AttributeValue{
+						S: aws.String(fmt.Sprintf("%d", v.(int64))),
 					}
 				default:
 					log.Fatalf("Don't know how to parse %s", t)

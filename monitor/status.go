@@ -4,6 +4,7 @@ import (
 	"github.com/nanobox-io/golang-scribble"
 	"log"
 	"os"
+	"time"
 )
 
 type Monitor struct {
@@ -11,10 +12,13 @@ type Monitor struct {
 	db   *scribble.Driver
 }
 
-var m Monitor
+var (
+	m     Monitor
+	start time.Time
+)
 
 type tableStatus struct {
-	offset int
+	Offset int
 }
 
 func NewMonitor() *Monitor {
@@ -39,10 +43,28 @@ func NewMonitor() *Monitor {
 // Report updates working status on a given table
 func Report(table string, offset int) {
 	s := tableStatus{
-		offset: offset,
+		Offset: offset,
 	}
 	if err := m.db.Write("table", table, s); err != nil {
 		log.Fatal("Fail to write %v", err)
 	}
+}
 
+// GetTableProgress return position where we left off
+func GetTableProgress(table string) int {
+	s := tableStatus{}
+	if err := m.db.Read("table", table, &s); err != nil {
+		log.Println("No existing progress found: %s. Will start from offset 0", err)
+		return 0
+	}
+
+	return s.Offset
+}
+
+func Start() {
+	start = time.Now()
+}
+
+func Done() {
+	log.Printf("ETL takes %s", time.Since(start))
 }
